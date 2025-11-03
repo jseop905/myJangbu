@@ -1,0 +1,129 @@
+// Prisma Schema for myJangbu
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// User
+// ============================================================
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  timezone  String   @default("Asia/Seoul")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts     Account[]
+  categories   Category[]
+  transactions Transaction[]
+  fixedItems   FixedItem[]
+
+  @@map("users")
+}
+
+// ============================================================
+// Account (카드/은행/현금)
+// ============================================================
+model Account {
+  id         String   @id @default(cuid())
+  userId     String
+  type       String   // card | bank | cash | other
+  name       String
+  issuer     String?  // 발급사(카드인 경우)
+  last4      String?  // 마지막 4자리
+  billingDay Int?     // 결제일(카드)
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  fixedItems   FixedItem[]
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+// ============================================================
+// Category (수입/지출 분류)
+// ============================================================
+model Category {
+  id       String  @id @default(cuid())
+  userId   String? // null = 시스템 카테고리
+  name     String
+  type     String  // income | expense | both
+  parentId String?
+  order    Int     @default(0)
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent       Category?     @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Category[]    @relation("CategoryTree")
+  transactions Transaction[]
+  fixedItems   FixedItem[]
+
+  @@index([userId])
+  @@index([parentId])
+  @@map("categories")
+}
+
+// ============================================================
+// Transaction (거래 내역)
+// ============================================================
+model Transaction {
+  id         String   @id @default(cuid())
+  userId     String
+  date       DateTime // UTC 저장
+  amount     Int      // 원화 정수 (부호 없음, type으로 구분)
+  type       String   // income | expense
+  memo       String?
+  categoryId String
+  accountId  String
+  source     String   @default("manual") // manual | import | rule
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([userId, date])
+  @@index([categoryId])
+  @@index([accountId])
+  @@map("transactions")
+}
+
+// ============================================================
+// FixedItem (정기 항목 원형) - 전개 엔진은 후순위
+// ============================================================
+model FixedItem {
+  id                 String    @id @default(cuid())
+  userId             String
+  name               String
+  type               String    // income | expense
+  amount             Int       // 원화 정수
+  categoryId         String
+  accountId          String
+  startDate          DateTime
+  endDate            DateTime?
+  recurrenceRule     String?   // RRULE 포맷 (FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=15)
+  nextOccurrenceDate DateTime?
+  status             String    @default("active") // active | paused
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+  @@index([nextOccurrenceDate])
+  @@map("fixed_items")
+}
+
