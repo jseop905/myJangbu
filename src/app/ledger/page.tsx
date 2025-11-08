@@ -5,6 +5,7 @@ import { useTransactions, useDeleteTransaction } from "@/features/transaction/ho
 import { CreateTransactionDialog } from "@/features/transaction/create-dialog";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
+import { PageHeader } from "@/shared/ui/page-header";
 import { formatKRW, formatDate } from "@/shared/lib/utils";
 import { Trash2 } from "lucide-react";
 
@@ -23,13 +24,11 @@ export default function LedgerPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">거래내역</h1>
-          <p className="text-muted-foreground">수입과 지출을 관리하세요</p>
-        </div>
-        <Button onClick={() => setDialogOpen(true)}>+ 거래 추가</Button>
-      </div>
+      <PageHeader
+        title="거래내역"
+        description="수입과 지출을 관리하세요"
+        action={<Button onClick={() => setDialogOpen(true)}>+ 거래 추가</Button>}
+      />
 
       {/* 필터 영역 - TODO: 구현 예정 */}
       <Card>
@@ -63,9 +62,7 @@ export default function LedgerPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{tx.category.name}</span>
-                      <span className="text-sm text-muted-foreground">
-                        · {tx.account.name}
-                      </span>
+                      <span className="text-sm text-muted-foreground">· {tx.account.name}</span>
                     </div>
                     {tx.memo && <p className="text-sm text-muted-foreground">{tx.memo}</p>}
                     <p className="text-xs text-muted-foreground">{formatDate(tx.date, "long")}</p>
@@ -99,4 +96,3 @@ export default function LedgerPage() {
     </div>
   );
 }
-

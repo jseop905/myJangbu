@@ -1,0 +1,300 @@
+# 마이장부 (myJangbu) - Cursor Rules
+
+## 프로젝트 개요
+- **목적**: 수입/지출 관리 웹 애플리케이션
+- **스택**: Next.js 14 (App Router), TypeScript, Prisma, PostgreSQL
+- **아키텍처**: FSD (Feature-Sliced Design)
+- **UI**: Tailwind CSS, shadcn/ui, Recharts
+- **상태관리**: TanStack Query, Zustand
+
+---
+
+## 🏗️ FSD 아키텍처 규칙
+
+### 레이어 구조 및 의존성
+```
+app → widgets → features → entities → shared
+```
+
+**절대 규칙**:
+- 하위 레이어는 상위 레이어를 import 할 수 없음
+- 같은 레이어 내 cross-import 금지 (특히 entities, features)
+- 모든 import는 절대경로 사용 (`@/`)
+
+### 레이어별 역할
+
+#### `shared/` - 공통 코드
+- **목적**: 프로젝트 전역에서 사용하는 재사용 가능 코드
+- **포함**: UI 컴포넌트, 유틸 함수, 타입, API 클라이언트, 상수
+- **금지**: 비즈니스 로직, 다른 레이어 import
+- **위치**:
+  - `shared/ui/` - shadcn/ui 기반 공통 UI 컴포넌트
+  - `shared/lib/` - 유틸 함수, Prisma 클라이언트
+  - `shared/api/` - API 클라이언트, fetch 래퍼
+  - `shared/types/` - 전역 TypeScript 타입
+  - `shared/config/` - 상수, 환경 설정
+
+#### `entities/` - 비즈니스 엔티티
+- **목적**: 도메인 모델 (Transaction, Category, Account 등)
+- **포함**: 
+  - `model.ts` - Zod 스키마, 타입 정의
+  - `hooks.ts` - React Query 조회(GET) hooks
+  - `ui/` - 엔티티 표시용 컴포넌트 (액션 없음)
+- **금지**: Mutation hooks (생성/수정/삭제), 사용자 액션
+- **예시**: `entities/transaction/model.ts`
+
+#### `features/` - 사용자 기능
+- **목적**: 사용자 인터랙션/액션
+- **포함**:
+  - `hooks.ts` - Mutation hooks (POST, PUT, DELETE)
+  - UI 컴포넌트 - 모달, 폼, 버튼 등
+- **예시**: `features/transaction/create-dialog.tsx`
+
+#### `widgets/` - 복합 위젯
+- **목적**: 여러 entities + features를 조합한 큰 UI 블록
+- **포함**: `ui.tsx`, `hooks.ts`
+- **예시**: `widgets/ledger-summary/ui.tsx` (요약 카드 + 차트)
+
+#### `app/` - 애플리케이션 레이어
+- **목적**: Next.js 라우팅, 페이지, API Routes
+- **포함**:
+  - `page.tsx` - 페이지 컴포넌트 (얇게 유지, 위젯 조합만)
+  - `layout.tsx` - 레이아웃
+  - `api/` - API Routes (백엔드)
+- **금지**: 복잡한 비즈니스 로직 (widgets로 이동)
+
+---
+
+## 📝 코딩 스타일 가이드
+
+### TypeScript
+- **strict mode**: 항상 활성화
+- **타입 선언**: `interface`보다 `type` 선호 (DTO, Props)
+- **any 금지**: 불가피한 경우 `unknown` 사용 후 타입 가드
+- **nullable**: `| null` 명시적 사용
+- **미사용 변수**: `_` prefix 사용 (예: `_unusedParam`)
+
+### React 컴포넌트
+- **함수 컴포넌트**: arrow function 사용
+```typescript
+export function MyComponent() {
+  return <div>...</div>;
+}
+```
+- **"use client"**: 클라이언트 컴포넌트에만 명시
+- **Props 타입**: 항상 명시
+```typescript
+interface MyComponentProps {
+  title: string;
+  onClose: () => void;
+}
+```
+- **Export**: named export 우선 (default는 page.tsx만)
+
+### 네이밍 컨벤션
+- **컴포넌트**: PascalCase (`TransactionCard`)
+- **파일명**: kebab-case (`transaction-card.tsx`)
+- **hooks**: camelCase, `use` prefix (`useTransactions`)
+- **상수**: UPPER_SNAKE_CASE (`DEFAULT_TIMEZONE`)
+- **API 엔드포인트**: kebab-case (`/api/ledger/summary`)
+
+---
+
+## 🔌 API 설계 규칙
+
+### REST API Routes
+- **위치**: `app/api/[resource]/route.ts`
+- **메서드**: GET, POST, PUT, DELETE
+- **응답 포맷**:
+```typescript
+{
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+```
+
+### API 구현 패턴
+```typescript
+export async function POST(request: NextRequest) {
+  try {
+    const userId = await getCurrentUserId();
+    const body = await request.json();
+    
+    // 1. Zod 검증
+    const validated = schema.parse(body);
+    
+    // 2. Prisma 쿼리 (userId 스코핑 필수!)
+    const result = await prisma.model.create({
+      data: { ...validated, userId },
+    });
+    
+    return apiSuccess(result, 201);
+  } catch (error: any) {
+    if (error.name === "ZodError") return handleZodError(error);
+    return handleServerError(error);
+  }
+}
+```
+
+### API 호출 (클라이언트)
+- **TanStack Query 사용**: useQuery (조회), useMutation (변경)
+- **캐시 무효화**: mutation onSuccess에서 `invalidateQueries`
+```typescript
+export function useCreateTransaction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data) => apiClient.post("/api/transactions", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    },
+  });
+}
+```
+
+---
+
+## 💾 데이터베이스 규칙
+
+### Prisma 쿼리
+- **userId 스코핑**: 모든 쿼리에 필수
+```typescript
+await prisma.transaction.findMany({
+  where: { userId },  // 필수!
+});
+```
+- **N+1 방지**: `include`로 join select
+- **집계**: DB에서 처리 (`groupBy`, `aggregate`)
+- **페이지네이션**: `take`, `skip` 사용
+
+### 시간대 처리
+- **DB 저장**: UTC (`new Date()`)
+- **클라이언트 표시**: `Asia/Seoul` (user.timezone)
+- **날짜 입력**: `datetime-local` → UTC 변환
+
+### 금액 처리
+- **타입**: `Int` (부동소수 금지)
+- **통화**: 원화(KRW) 정수
+- **부호**: `type` 필드로 구분 (income/expense), 금액은 항상 양수
+
+---
+
+## 🎨 UI 컴포넌트 규칙
+
+### shadcn/ui 사용
+- **위치**: `shared/ui/`
+- **import**: `@/shared/ui/[component]`
+- **커스터마이징**: 필요 시 파일 직접 수정 OK
+- **신규 컴포넌트**: 공식 문서 따라 추가
+
+### Tailwind CSS
+- **유틸리티 우선**: inline className 사용
+- **조건부 스타일**: `cn()` 헬퍼 사용
+```typescript
+<div className={cn("base-class", isActive && "active-class")} />
+```
+- **색상**: CSS 변수 사용 (`text-primary`, `bg-muted`)
+
+### 폼 처리
+- **라이브러리**: React Hook Form + Zod
+```typescript
+const { register, handleSubmit, formState: { errors } } = useForm({
+  resolver: zodResolver(schema),
+});
+```
+- **에러 표시**: 필드 아래 빨간 텍스트
+- **제출 버튼**: disabled 상태 표시
+
+---
+
+## 🚨 보안 및 검증 규칙
+
+### 입력 검증
+- **클라이언트**: React Hook Form + Zod
+- **서버**: Zod 스키마 재검증 (필수!)
+- **에러 메시지**: 한국어, 구체적으로
+
+### 인증/권한
+- **현재**: 데모 유저 (임시)
+- **TODO**: NextAuth 통합 시 `getServerSession()` 사용
+- **userId**: 모든 데이터 접근에 필수 체크
+
+---
+
+## 📦 파일 생성 가이드
+
+### 새 페이지 추가 시
+1. `app/[페이지명]/page.tsx` 생성
+2. 필요 시 `entities/[엔티티]/model.ts` 정의
+3. `features/[기능]/hooks.ts` (mutation)
+4. `features/[기능]/[UI].tsx` (모달, 폼)
+5. API Route 확인/추가
+6. `app/layout.tsx`에 네비게이션 링크 추가
+
+### 새 엔티티 추가 시
+```
+entities/[entity]/
+├── model.ts      # Zod 스키마, 타입
+├── hooks.ts      # useQuery hooks (조회)
+└── ui/           # 표시 컴포넌트 (선택)
+```
+
+### 새 기능 추가 시
+```
+features/[feature]/
+├── hooks.ts      # useMutation hooks (CUD)
+└── [ui].tsx      # 액션 UI (모달, 버튼 등)
+```
+
+---
+
+## 🧪 개발 가이드라인
+
+### 성능 최적화
+- React Query 캐싱 활용 (`staleTime` 설정)
+- 이미지: Next.js `<Image>` 사용
+- 무거운 컴포넌트: `React.lazy()` 고려
+
+### 에러 처리
+- API 에러: try-catch + toast 표시 (TODO: toast 구현)
+- 404: 명확한 메시지
+- 500: 로그 출력 + 사용자에게 일반 메시지
+
+### TODO 주석 규칙
+```typescript
+// TODO: [기능명] - 설명
+// TODO: NextAuth 통합 - 실제 세션 기반 인증으로 교체
+```
+
+---
+
+## 🚫 금지 사항
+
+1. **any 타입 남발**
+2. **하위 레이어가 상위 레이어 import**
+3. **userId 없이 데이터 접근**
+4. **클라이언트에서만 검증** (서버 검증 필수)
+5. **inline styles** (Tailwind 사용)
+6. **console.log 프로덕션 코드에 남기기**
+7. **하드코딩된 URL** (환경변수 사용)
+
+---
+
+## ✅ 코드 리뷰 체크리스트
+
+- [ ] FSD 레이어 규칙 준수
+- [ ] TypeScript strict 모드 통과
+- [ ] Zod 스키마로 검증
+- [ ] userId 스코핑 적용
+- [ ] TanStack Query 캐시 무효화
+- [ ] 에러 처리 구현
+- [ ] 접근성 (a11y) 고려
+- [ ] 반응형 디자인 (모바일)
+- [ ] 한국어 메시지
+- [ ] TODO 주석 명확히
+
+---
+
+**프로젝트 버전**: v0.1.0  
+**최종 업데이트**: 2025-11-05
+

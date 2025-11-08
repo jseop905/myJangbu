@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { LedgerSummary } from "@/widgets/ledger-summary/ui";
 import { Button } from "@/shared/ui/button";
+import { PageHeader } from "@/shared/ui/page-header";
 
 export default function DashboardPage() {
   // 이번 달 from/to 계산
@@ -19,15 +20,15 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">대시보드</h1>
-          <p className="text-muted-foreground">이번 달 수입·지출 현황</p>
-        </div>
-        <Button asChild>
-          <a href="/ledger">거래내역 보기</a>
-        </Button>
-      </div>
+      <PageHeader
+        title="대시보드"
+        description="이번 달 수입·지출 현황"
+        action={
+          <Button asChild>
+            <a href="/ledger">거래내역 보기</a>
+          </Button>
+        }
+      />
 
       <LedgerSummary from={from} to={to} />
     </div>

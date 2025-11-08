@@ -41,8 +41,8 @@ export function handleServerError(error: unknown): NextResponse<ApiResponse> {
 export async function getCurrentUserId(): Promise<string> {
   // 임시: 데모 유저 조회
   // 실제로는 getServerSession()으로 세션에서 가져와야 함
-  const { prisma } = await import("./prisma");
-  
+  const { prisma } = await import("@/shared/lib/prisma");
+
   let user = await prisma.user.findUnique({
     where: { email: "demo@myjangbu.com" },
   });
@@ -60,4 +60,3 @@ export async function getCurrentUserId(): Promise<string> {
 
   return user.id;
 }
-
